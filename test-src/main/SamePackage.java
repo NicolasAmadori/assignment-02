@@ -1,3 +1,5 @@
+package main;
+
 protected class SamePackage {
   protected SamePackage() {}
 

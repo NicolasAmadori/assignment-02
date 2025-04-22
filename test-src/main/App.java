@@ -12,5 +12,7 @@ public class App {
     service.process(user);
     SamePackage samePackage = new SamePackage();
     samePackage.samePackagePrint();
+    Integer intSamePackage = new Integer();
+    intSamePackage.printInteger();
   }
 }
