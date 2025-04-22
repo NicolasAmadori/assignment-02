@@ -1,11 +1,13 @@
 package pcd.ass02;
 
+import io.vertx.core.Future;
+
 import java.util.ArrayList;
 import java.util.List;
 
-public class ProjectDepsReport implements DepsReport<PackageDepsReport> {
+public class ProjectDepsReport implements DepsReport<Future<PackageDepsReport>> {
   private final String projectName;
-  private final List<PackageDepsReport> packagesReports;
+  private final List<Future<PackageDepsReport>> packagesReports;
 
   public ProjectDepsReport(String projectName) {
     this.projectName = projectName;
@@ -13,12 +15,12 @@ public class ProjectDepsReport implements DepsReport<PackageDepsReport> {
   }
 
   @Override
-  public void addElement(PackageDepsReport element) {
+  public void addElement(Future<PackageDepsReport> element) {
     this.packagesReports.add(element);
   }
 
   @Override
-  public List<PackageDepsReport> getElements() {
+  public List<Future<PackageDepsReport>> getElements() {
     return packagesReports;
   }
 

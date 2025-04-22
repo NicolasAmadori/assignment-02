@@ -47,37 +47,12 @@ public class DependecyAnalyserLib {
   private void getDependencies(final String classPath, final String classSrc, final Promise<ClassDepsReport> promise) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(classSrc);
-      Path srcPath = Paths.get(classPath);
-      var pkg = cu.getPackageDeclaration();
-      if (pkg.isPresent()) {
-        String packageName = pkg.get().getNameAsString();
-        srcPath = getSourceRoot(srcPath, packageName);
-      } else {
-        srcPath = srcPath.getParent(); //ERROR
-      }
-      initTypeSolver(srcPath.toString());
-
       ClassDepsReport classDepsReport = new ClassDepsReport(classPath);
-      //              classDepsReport.addElement(e);
 
-      cu.findAll(ClassOrInterfaceType.class).stream()
-        .map(type -> {
-          try {
-            return type.resolve().describe();
-          } catch (Exception e) {
-            return "Unresolved: " + type.getNameAsString();
-          }
-        })
-        .distinct()
-        .forEach(System.out::println);
-      cu.findAll(ClassOrInterfaceType.class).stream()
-        .map(ClassOrInterfaceType::getNameAsString)
-        .distinct()
-        .forEach(System.out::println);
       cu.findAll(ImportDeclaration.class).stream()
         .map(ImportDeclaration::getNameAsString)
         .distinct()
-        .forEach(System.out::println);
+        .forEach(classDepsReport::addElement);
 
       promise.complete(classDepsReport);
     } catch (Exception e) {
@@ -102,28 +77,45 @@ public class DependecyAnalyserLib {
 
   public Future<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
     Promise<PackageDepsReport> promise = Promise.promise();
-    this.fs
-      .readFile(packageSrcFolder)
-      .onSuccess(res -> {
-
-      })
-      .onFailure(err -> {
-        System.err.println("Error while package reading: " + err.getMessage());
-        promise.fail(err);
-      });
+    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder);
+    try {
+      this.fs
+        .readDir(packageSrcFolder)
+        .onSuccess(res -> {
+          res.stream()
+            .filter(p -> p.contains(".java"))
+            .forEach(p -> packageDepsReport.addElement(getClassDependencies(p)));
+        })
+        .onFailure(err -> {
+          System.err.println("Error while package reading: " + err.getMessage());
+          promise.fail(err);
+        });
+      promise.complete(packageDepsReport);
+    } catch (Exception e) {
+      promise.fail(e);
+    }
     return promise.future();
   }
 
   public Future<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
-    TypeSolver typeSolver = new CombinedTypeSolver(
-      new ReflectionTypeSolver(), // for JDK classes
-      new JavaParserTypeSolver(new File(projectSrcFolder))
-    );
-    ParserConfiguration config = new ParserConfiguration()
-      .setSymbolResolver(new JavaSymbolSolver(typeSolver));
-    StaticJavaParser.setConfiguration(config);
-
     Promise<ProjectDepsReport> promise = Promise.promise();
+    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
+    try {
+      this.fs
+        .readDir(projectSrcFolder)
+        .onSuccess(res -> {
+          res.stream()
+            .filter(p -> p.contains(".java"))
+            .forEach(this::getClassDependencies);
+        })
+        .onFailure(err -> {
+          System.err.println("Error while project reading: " + err.getMessage());
+          promise.fail(err);
+        });
+      promise.complete(projectDepsReport);
+    } catch (Exception e) {
+      promise.fail(e);
+    }
     return promise.future();
   }
 

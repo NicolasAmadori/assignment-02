@@ -12,7 +12,18 @@ public class MainVerticle extends AbstractVerticle {
     analyser.getClassDependencies("test-src/main/App.java")
       .onSuccess(res -> {
         startPromise.complete();
+//        vertx.close();
+        System.out.println(res.getElements());
+      })
+      .onFailure(err -> {
+        startPromise.fail(err);
         vertx.close();
+      });
+    analyser.getPackageDependencies("test-src/main/")
+      .onSuccess(res -> {
+        startPromise.complete();
+//        vertx.close();
+        System.out.println(res.getElements());
       })
       .onFailure(err -> {
         startPromise.fail(err);
