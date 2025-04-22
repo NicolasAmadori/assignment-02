@@ -5,10 +5,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.TypeSolver;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Promise;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.file.FileSystem;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.*;
@@ -18,6 +15,8 @@ import com.github.javaparser.ParserConfiguration;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DependecyAnalyserLib {
 
@@ -26,7 +25,7 @@ public class DependecyAnalyserLib {
 
   public DependecyAnalyserLib(Vertx vertx) {
     this.vertx = vertx;
-    this.fs = vertx.fileSystem();
+    fs = vertx.fileSystem();
   }
 
   private void initTypeSolver(final String packagePath) {
@@ -62,7 +61,7 @@ public class DependecyAnalyserLib {
 
   public Future<ClassDepsReport> getClassDependencies(final String classSrcFile) {
     Promise<ClassDepsReport> promise = Promise.promise();
-    this.fs
+    fs
       .readFile(classSrcFile)
       .onSuccess(res -> {
         getDependencies(classSrcFile, res.toString(), promise);
@@ -79,18 +78,23 @@ public class DependecyAnalyserLib {
     Promise<PackageDepsReport> promise = Promise.promise();
     PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder);
     try {
-      this.fs
-        .readDir(packageSrcFolder)
-        .onSuccess(res -> {
-          res.stream()
+      fs.readDir(packageSrcFolder)
+        .onSuccess(paths -> {
+          List<Future<ClassDepsReport>> futures = paths.stream()
             .filter(p -> p.endsWith(".java"))
-            .forEach(p -> packageDepsReport.addElement(getClassDependencies(p)));
+            .map(this::getClassDependencies)
+            .toList();
+
+          Future.all(futures)
+            .onSuccess(classDepsReports -> {
+              for (int i = 0; i < classDepsReports.size(); i++) {
+                packageDepsReport.addElement(classDepsReports.resultAt(i));
+              }
+              promise.complete(packageDepsReport);
+            })
+            .onFailure(promise::fail);
         })
-        .onFailure(err -> {
-          System.err.println("Error while package reading: " + err.getMessage());
-          promise.fail(err);
-        });
-      promise.complete(packageDepsReport);
+        .onFailure(promise::fail);
     } catch (Exception e) {
       promise.fail(e);
     }
@@ -99,23 +103,33 @@ public class DependecyAnalyserLib {
 
   public Future<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
     Promise<ProjectDepsReport> promise = Promise.promise();
-    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
-    try {
-      this.fs
-        .readDir(projectSrcFolder)
-        .onSuccess(res -> {
-          res.stream()
-            .filter(p -> p.contains(".java"))
-            .forEach(this::getClassDependencies);
-        })
-        .onFailure(err -> {
-          System.err.println("Error while project reading: " + err.getMessage());
-          promise.fail(err);
-        });
-      promise.complete(projectDepsReport);
-    } catch (Exception e) {
-      promise.fail(e);
-    }
+//    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
+//    try {
+//      fs.readDir(projectSrcFolder)
+//        .onSuccess(paths -> {
+//
+//          List<Future<PackageDepsReport>> packageFutures = paths.stream()
+//            .filter(p -> !p.endsWith(".java"))
+//            .map(this::getPackageDependencies)
+//            .toList();
+//
+//          List<Future> allFutures = new ArrayList<>();
+//          allFutures.addAll(classFutures);
+//          allFutures.addAll(packageFutures);
+//
+//          Future.all(allFutures)
+//            .onSuccess(classDepsReports -> {
+//              for (int i = 0; i < classDepsReports.size(); i++) {
+//                projectDepsReport.addElement(classDepsReports.resultAt(i));
+//              }
+//              promise.complete(projectDepsReport);
+//            })
+//            .onFailure(promise::fail);
+//        })
+//        .onFailure(promise::fail);
+//    } catch (Exception e) {
+//      promise.fail(e);
+//    }
     return promise.future();
   }
 

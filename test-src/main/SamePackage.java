@@ -1,9 +1,9 @@
 package main;
 
-protected class SamePackage {
-  protected SamePackage() {}
+public class SamePackage {
+  public SamePackage() {}
 
-  protected void samePackagePrint() {
+  public void samePackagePrint() {
     System.out.println("samePackage");
   }
 }

@@ -1,9 +1,9 @@
 package main;
 
 public class Integer {
-  protected Integer() {}
+  public Integer() {}
 
-  protected void printInteger() {
+  public void printInteger() {
     System.out.println("Inside the same package");
   }
 }

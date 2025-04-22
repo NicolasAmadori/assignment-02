@@ -5,9 +5,9 @@ import io.vertx.core.Future;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ProjectDepsReport implements DepsReport<Future<PackageDepsReport>> {
+public class ProjectDepsReport implements DepsReport<PackageDepsReport> {
   private final String projectName;
-  private final List<Future<PackageDepsReport>> packagesReports;
+  private final List<PackageDepsReport> packagesReports;
 
   public ProjectDepsReport(String projectName) {
     this.projectName = projectName;
@@ -15,12 +15,12 @@ public class ProjectDepsReport implements DepsReport<Future<PackageDepsReport>> 
   }
 
   @Override
-  public void addElement(Future<PackageDepsReport> element) {
+  public void addElement(PackageDepsReport element) {
     this.packagesReports.add(element);
   }
 
   @Override
-  public List<Future<PackageDepsReport>> getElements() {
+  public List<PackageDepsReport> getElements() {
     return packagesReports;
   }
 

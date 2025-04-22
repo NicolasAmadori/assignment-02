@@ -5,10 +5,10 @@ import io.vertx.core.Future;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PackageDepsReport implements DepsReport<Future<ClassDepsReport>>{
+public class PackageDepsReport implements DepsReport<ClassDepsReport>{
 
   private final String packageName;
-  private final List<Future<ClassDepsReport>> classesReports;
+  private final List<ClassDepsReport> classesReports;
 
   public PackageDepsReport(String packageName) {
     this.packageName = packageName;
@@ -16,12 +16,12 @@ public class PackageDepsReport implements DepsReport<Future<ClassDepsReport>>{
   }
 
   @Override
-  public void addElement(Future<ClassDepsReport> element) {
+  public void addElement(ClassDepsReport element) {
     this.classesReports.add(element);
   }
 
   @Override
-  public List<Future<ClassDepsReport>> getElements() {
+  public List<ClassDepsReport> getElements() {
     return classesReports;
   }
 
