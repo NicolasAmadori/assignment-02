@@ -83,7 +83,7 @@ public class DependecyAnalyserLib {
         .readDir(packageSrcFolder)
         .onSuccess(res -> {
           res.stream()
-            .filter(p -> p.contains(".java"))
+            .filter(p -> p.endsWith(".java"))
             .forEach(p -> packageDepsReport.addElement(getClassDependencies(p)));
         })
         .onFailure(err -> {
