@@ -46,7 +46,7 @@ public class DependecyAnalyserLib {
   private void getDependencies(final String classPath, final String classSrc, final Promise<ClassDepsReport> promise) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(classSrc);
-      ClassDepsReport classDepsReport = new ClassDepsReport(classPath);
+      ClassDepsReport classDepsReport = new ClassDepsReport(classPath); // TODO: fix src
 
       cu.findAll(ImportDeclaration.class).stream()
         .map(ImportDeclaration::getNameAsString)
@@ -57,6 +57,28 @@ public class DependecyAnalyserLib {
     } catch (Exception e) {
       promise.fail(e);
     }
+  }
+
+  private Future<List<String>> findAllDirectories(String rootPath) {
+    Promise<List<String>> promise = Promise.promise();
+    List<String> directories = new ArrayList<>();
+
+    fs.readDir(rootPath)
+      .onSuccess(paths -> {
+        List<Future<Void>> futures = new ArrayList<>();
+        for (String path : paths) {
+          if (!path.contains(".")) { // Check if it's a directory
+            directories.add(path);
+            futures.add(findAllDirectories(path).onSuccess(directories::addAll).mapEmpty());
+          }
+        }
+        Future.all(futures)
+          .onSuccess(v -> promise.complete(directories))
+          .onFailure(promise::fail);
+      })
+      .onFailure(promise::fail);
+
+    return promise.future();
   }
 
   public Future<ClassDepsReport> getClassDependencies(final String classSrcFile) {
@@ -76,7 +98,7 @@ public class DependecyAnalyserLib {
 
   public Future<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
     Promise<PackageDepsReport> promise = Promise.promise();
-    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder);
+    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder); // TODO: fix src
     try {
       fs.readDir(packageSrcFolder)
         .onSuccess(paths -> {
@@ -103,33 +125,35 @@ public class DependecyAnalyserLib {
 
   public Future<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
     Promise<ProjectDepsReport> promise = Promise.promise();
-//    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
-//    try {
+    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
+    try {
 //      fs.readDir(projectSrcFolder)
 //        .onSuccess(paths -> {
-//
+////          paths.forEach(System.out::println);
 //          List<Future<PackageDepsReport>> packageFutures = paths.stream()
-//            .filter(p -> !p.endsWith(".java"))
+//            .filter(p -> !p.contains("."))
 //            .map(this::getPackageDependencies)
 //            .toList();
-//
-//          List<Future> allFutures = new ArrayList<>();
-//          allFutures.addAll(classFutures);
-//          allFutures.addAll(packageFutures);
-//
-//          Future.all(allFutures)
-//            .onSuccess(classDepsReports -> {
-//              for (int i = 0; i < classDepsReports.size(); i++) {
-//                projectDepsReport.addElement(classDepsReports.resultAt(i));
-//              }
-//              promise.complete(projectDepsReport);
-//            })
-//            .onFailure(promise::fail);
-//        })
-//        .onFailure(promise::fail);
-//    } catch (Exception e) {
-//      promise.fail(e);
-//    }
+      findAllDirectories(projectSrcFolder)
+        .onSuccess(paths -> {
+          List<Future<PackageDepsReport>> packageFutures = paths.stream()
+          .filter(p -> !p.contains("."))
+          .map(this::getPackageDependencies)
+          .toList();
+
+          Future.all(packageFutures)
+            .onSuccess(packageDepsReports -> {
+              for (int i = 0; i < packageDepsReports.size(); i++) {
+                projectDepsReport.addElement(packageDepsReports.resultAt(i));
+              }
+              promise.complete(projectDepsReport);
+            })
+            .onFailure(promise::fail);
+        })
+        .onFailure(promise::fail);
+    } catch (Exception e) {
+      promise.fail(e);
+    }
     return promise.future();
   }
 
