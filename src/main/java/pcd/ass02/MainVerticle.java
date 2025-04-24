@@ -2,6 +2,7 @@ package pcd.ass02;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
+import io.vertx.core.json.Json;
 
 import java.util.List;
 import java.util.Map;
@@ -55,7 +56,7 @@ public class MainVerticle extends AbstractVerticle {
       .onSuccess(res -> {
         startPromise.complete();
         vertx.close();
-        System.out.println(res.getName() + " -> \t" + projectDepsToMap(res));
+        System.out.println(res.getName() + " -> \t" + Json.encode(projectDepsToMap(res)));
       })
       .onFailure(err -> {
         startPromise.fail(err);

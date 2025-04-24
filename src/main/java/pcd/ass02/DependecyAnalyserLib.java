@@ -16,6 +16,7 @@ import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class DependecyAnalyserLib {
@@ -46,7 +47,7 @@ public class DependecyAnalyserLib {
   private void getDependencies(final String classPath, final String classSrc, final Promise<ClassDepsReport> promise) {
     try {
       CompilationUnit cu = StaticJavaParser.parse(classSrc);
-      ClassDepsReport classDepsReport = new ClassDepsReport(classPath); // TODO: fix src
+      ClassDepsReport classDepsReport = new ClassDepsReport(classPath);
 
       cu.findAll(ImportDeclaration.class).stream()
         .map(ImportDeclaration::getNameAsString)
@@ -63,19 +64,27 @@ public class DependecyAnalyserLib {
     Promise<List<String>> promise = Promise.promise();
     List<String> directories = new ArrayList<>();
 
-    fs.readDir(rootPath)
-      .onSuccess(paths -> {
-        List<Future<Void>> futures = new ArrayList<>();
+    fs.readDir(rootPath).compose(paths -> {
+        List<Future<Void>> composedFutures = new ArrayList<>();
+
         for (String path : paths) {
-          if (!path.contains(".")) { // Check if it's a directory
+          Future<Void> composed = fs.props(path).compose(props -> {
+            if (!props.isDirectory()) {
+              return Future.succeededFuture(); // non è una directory, skip
+            }
             directories.add(path);
-            futures.add(findAllDirectories(path).onSuccess(directories::addAll).mapEmpty());
-          }
+            return findAllDirectories(path)
+              .compose(subDirs -> {
+                directories.addAll(subDirs);
+                return Future.succeededFuture();
+              });
+          });
+
+          composedFutures.add(composed);
         }
-        Future.all(futures)
-          .onSuccess(v -> promise.complete(directories))
-          .onFailure(promise::fail);
-      })
+
+        return Future.all(composedFutures).mapEmpty();
+      }).onSuccess(v -> promise.complete(directories))
       .onFailure(promise::fail);
 
     return promise.future();
@@ -98,62 +107,50 @@ public class DependecyAnalyserLib {
 
   public Future<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
     Promise<PackageDepsReport> promise = Promise.promise();
-    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder); // TODO: fix src
-    try {
-      fs.readDir(packageSrcFolder)
-        .onSuccess(paths -> {
-          List<Future<ClassDepsReport>> futures = paths.stream()
-            .filter(p -> p.endsWith(".java"))
-            .map(this::getClassDependencies)
-            .toList();
+    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder);
+    fs.readDir(packageSrcFolder)
+      .onSuccess(paths -> {
+        List<Future<ClassDepsReport>> futures = paths.stream()
+          .filter(p -> p.endsWith(".java"))
+          .map(p -> p.replace("\\", "/"))
+          .map(p -> p.substring(p.indexOf(packageSrcFolder)))
+          .map(this::getClassDependencies)
+          .toList();
 
-          Future.all(futures)
-            .onSuccess(classDepsReports -> {
-              for (int i = 0; i < classDepsReports.size(); i++) {
-                packageDepsReport.addElement(classDepsReports.resultAt(i));
-              }
-              promise.complete(packageDepsReport);
-            })
-            .onFailure(promise::fail);
-        })
-        .onFailure(promise::fail);
-    } catch (Exception e) {
-      promise.fail(e);
-    }
+        Future.all(futures)
+          .onSuccess(classDepsReports -> {
+            for (int i = 0; i < classDepsReports.size(); i++) {
+              packageDepsReport.addElement(classDepsReports.resultAt(i));
+            }
+            promise.complete(packageDepsReport);
+          })
+          .onFailure(promise::fail);
+      })
+      .onFailure(promise::fail);
     return promise.future();
   }
 
   public Future<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
     Promise<ProjectDepsReport> promise = Promise.promise();
     ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
-    try {
-//      fs.readDir(projectSrcFolder)
-//        .onSuccess(paths -> {
-////          paths.forEach(System.out::println);
-//          List<Future<PackageDepsReport>> packageFutures = paths.stream()
-//            .filter(p -> !p.contains("."))
-//            .map(this::getPackageDependencies)
-//            .toList();
-      findAllDirectories(projectSrcFolder)
-        .onSuccess(paths -> {
-          List<Future<PackageDepsReport>> packageFutures = paths.stream()
-          .filter(p -> !p.contains("."))
+    findAllDirectories(projectSrcFolder)
+      .onSuccess(packages -> {
+        List<Future<PackageDepsReport>> packageFutures = packages.stream()
+          .map(p -> p.replace("\\", "/"))
+          .map(p -> p.substring(p.indexOf(projectSrcFolder)))
           .map(this::getPackageDependencies)
           .toList();
 
-          Future.all(packageFutures)
-            .onSuccess(packageDepsReports -> {
-              for (int i = 0; i < packageDepsReports.size(); i++) {
-                projectDepsReport.addElement(packageDepsReports.resultAt(i));
-              }
-              promise.complete(projectDepsReport);
-            })
-            .onFailure(promise::fail);
-        })
-        .onFailure(promise::fail);
-    } catch (Exception e) {
-      promise.fail(e);
-    }
+        Future.all(packageFutures)
+          .onSuccess(packageDepsReports -> {
+            for (int i = 0; i < packageDepsReports.size(); i++) {
+              projectDepsReport.addElement(packageDepsReports.resultAt(i));
+            }
+            promise.complete(projectDepsReport);
+          })
+          .onFailure(promise::fail);
+      })
+      .onFailure(promise::fail);
     return promise.future();
   }
 
