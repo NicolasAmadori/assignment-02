@@ -3,20 +3,17 @@ package pcd.ass02;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.TypeSolver;
 import io.vertx.core.*;
 import io.vertx.core.file.FileSystem;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.*;
-import com.github.javaparser.utils.SourceRoot;
 import com.github.javaparser.ParserConfiguration;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class DependecyAnalyserLib {
