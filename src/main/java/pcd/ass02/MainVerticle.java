@@ -25,7 +25,7 @@ public class MainVerticle extends AbstractVerticle {
         })
       .onFailure( err -> {
           startPromise.fail(err);
-//          vertx.close();
+          vertx.close();
         }
       );
   }

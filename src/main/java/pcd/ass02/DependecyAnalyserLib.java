@@ -3,6 +3,7 @@ package pcd.ass02;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.TypeSolver;
 import io.vertx.core.*;
 import io.vertx.core.file.FileSystem;
@@ -15,15 +16,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 public class DependecyAnalyserLib {
 
-  private final Vertx vertx;
   private final FileSystem fs;
 
   public DependecyAnalyserLib(Vertx vertx) {
-    this.vertx = vertx;
-    fs = vertx.fileSystem();
+    this.fs = vertx.fileSystem();
   }
 
   private void initTypeSolver(final String packagePath) {
@@ -36,13 +36,20 @@ public class DependecyAnalyserLib {
     StaticJavaParser.setConfiguration(config);
   }
 
-  private Path getSourceRoot(Path classFile, String packageName) {
-    Path packagePath = Paths.get(packageName.replace('.', File.separatorChar));
-    return classFile.getParent().resolveSibling(".").normalize().resolveSibling(packagePath).normalize();
+  private String getSourceRoot(String classPath, String packagePath) {
+    var packageRoot = packagePath.split("\\.")[0];
+    return classPath.split(packageRoot)[0];
+  }
+
+  private String getPackage(final String classSrc) throws NoSuchElementException {
+    CompilationUnit cu = StaticJavaParser.parse(classSrc);
+    return cu.getPackageDeclaration().get().getNameAsString();
   }
 
   private void getDependencies(final String classPath, final String classSrc, final Promise<ClassDepsReport> promise) {
     try {
+      initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
+
       CompilationUnit cu = StaticJavaParser.parse(classSrc);
       ClassDepsReport classDepsReport = new ClassDepsReport(classPath);
 
@@ -50,6 +57,16 @@ public class DependecyAnalyserLib {
         .map(ImportDeclaration::getNameAsString)
         .distinct()
         .forEach(classDepsReport::addElement);
+
+      cu.findAll(ClassOrInterfaceType.class).forEach(classType -> {
+        var resolvedType = classType.resolve();
+        if (resolvedType.isReferenceType()) {
+          var qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+          if (!classDepsReport.getElements().contains(qualifiedName) && !qualifiedName.startsWith("java.lang.")) {
+            classDepsReport.addElement(qualifiedName);
+          }
+        }
+      });
 
       promise.complete(classDepsReport);
     } catch (Exception e) {

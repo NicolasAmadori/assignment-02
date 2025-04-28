@@ -38,7 +38,7 @@ public class TestMainVerticle {
   @Test
   void testClassDependencies(Vertx vertx, VertxTestContext testContext) {
     final String PATH1 = "test-src/main/App.java";
-    final List<String> expected = List.of("models.User", "services.UserService", "utils.Logger");
+    final List<String> expected = List.of("models.User", "services.UserService", "utils.Logger", "main.SamePackage", "main.Integer");
     DependecyAnalyserLib analyser = new DependecyAnalyserLib(vertx);
 
     analyser.getClassDependencies(PATH1).onSuccess(res -> {
@@ -76,11 +76,11 @@ public class TestMainVerticle {
       Map.entry("test-src/nested/sub", Map.of("test-src/nested/sub/DeepClass.java", List.of("java.util.List", "models.Account"))),
       Map.entry("test-src/models", Map.of(
         "test-src/models/User.java", Collections.emptyList(),
-        "test-src/models/Account.java", Collections.emptyList())),
+        "test-src/models/Account.java", List.of("java.util", "java.util.List"))),
       Map.entry("test-src/nested", Collections.emptyMap()),
       Map.entry("test-src/main", Map.of(
         "test-src/main/Integer.java", Collections.emptyList(),
-        "test-src/main/App.java", List.of("models.User", "services.UserService", "utils.Logger"),
+        "test-src/main/App.java", List.of("models.User", "services.UserService", "utils.Logger", "main.SamePackage", "main.Integer"),
         "test-src/main/SamePackage.java", Collections.emptyList())),
       Map.entry("test-src/services", Map.of(
         "test-src/services/Logger.java", List.of("java.io.File"),
