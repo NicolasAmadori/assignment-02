@@ -153,6 +153,7 @@ public class DependencyAnalyserGUI {
     mxGraph graph = new mxGraph();
     Object parent = graph.getDefaultParent();
 
+    Map<String, Object> packageVertexMap = new HashMap<>();
     Map<String, Object> classVertexMap = new HashMap<>();
 
     graph.getModel().beginUpdate();
@@ -174,8 +175,6 @@ public class DependencyAnalyserGUI {
           for (var dep : classReport.getElements()) {
             Optional<String> depClassName = Optional.empty();
             var splitted = new ArrayList<>(Arrays.stream(dep.split("\\.")).toList());
-            //java.utils.Array
-            //java.utils
 
             if (Character.isUpperCase(splitted.get(splitted.size() - 1).charAt(0))) {
               depClassName = Optional.of(splitted.remove(splitted.size() - 1));
@@ -192,19 +191,35 @@ public class DependencyAnalyserGUI {
       int pIdx = 0;
       for (var entry : packClassDeps.entrySet()) {
         String packageName = entry.getKey();
-        // Create a parent vertex for the package (rectangle)
-        Object packageGroup = graph.insertVertex(parent, null, packageName,
-          xOffset + (pIdx % packagePerLine) * packageSpacing, (int) (pIdx / packagePerLine) * packageSpacing + yOffset, 250, 250,
-          "fillColor=none;strokeColor=black;rounded=1");
+        Map<String, List<String>> classMap = entry.getValue();
+
+        int classCount = classMap.size();
+        int calculatedHeight = Math.max(100, classCount * classSpacing + 40); // Minimum height 100
+
+        // Create package container
+        Object packageGroup = graph.insertVertex(
+          parent, null, packageName,
+          xOffset + (pIdx % packagePerLine) * packageSpacing,
+          (pIdx / packagePerLine) * packageSpacing + yOffset,
+          250, calculatedHeight,
+          "fillColor=none;strokeColor=black;rounded=1"
+        );
+        packageVertexMap.put(packageName, packageGroup);
 
         int cIdx = 0;
-        for (var e : entry.getValue().entrySet()) {
+        for (var e : classMap.entrySet()) {
           String className = e.getKey();
-          Object classVertex = graph.insertVertex(packageGroup, null, className,
-            20, 20 + cIdx * classSpacing, 100, 30);
+          int classNameWidth = Math.max(60, className.length() * 7 + 20); // Dynamically set width
+
+          Object classVertex = graph.insertVertex(
+            packageGroup, null, className,
+            20, 20 + cIdx * classSpacing,
+            classNameWidth, 30
+          );
           classVertexMap.put(className, classVertex);
           cIdx++;
         }
+
         pIdx++;
       }
 
@@ -212,10 +227,14 @@ public class DependencyAnalyserGUI {
       for (PackageDepsReport packageReport : report.getElements()) {
         for (ClassDepsReport classReport : packageReport.getElements()) {
           Object fromVertex = classVertexMap.get(classReport.getName());
-          for (String dep : classReport.getElements()) {
-            Object toVertex = classVertexMap.get(dep);
-            if (fromVertex != null && toVertex != null) {
-              graph.insertEdge(parent, null, "", fromVertex, toVertex);
+          if (fromVertex != null) {
+            for (String dep : classReport.getElements()) {
+              Object toVertex = classVertexMap.get(dep) == null
+                ? packageVertexMap.get(dep)
+                : classVertexMap.get(dep);
+              if (toVertex != null) {
+                graph.insertEdge(parent, null, "", fromVertex, toVertex);
+              }
             }
           }
         }
