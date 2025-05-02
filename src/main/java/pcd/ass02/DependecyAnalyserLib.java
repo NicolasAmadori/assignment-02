@@ -1,32 +1,32 @@
 package pcd.ass02;
 
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.TypeSolver;
-import io.vertx.core.*;
-import io.vertx.core.file.FileSystem;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.*;
-import com.github.javaparser.ParserConfiguration;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+
+import io.reactivex.rxjava3.core.*;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.nio.file.*;
+import java.util.stream.Stream;
 
 public class DependecyAnalyserLib {
 
-  private final FileSystem fs;
+  private DependecyAnalyserLib() {}
 
-  public DependecyAnalyserLib(Vertx vertx) {
-    this.fs = vertx.fileSystem();
-  }
-
-  private void initTypeSolver(final String packagePath) {
+  private static void initTypeSolver(final String packagePath) {
     TypeSolver typeSolver = new CombinedTypeSolver(
       new ReflectionTypeSolver(), // for JDK classes
       new JavaParserTypeSolver(new File(packagePath))
@@ -36,136 +36,105 @@ public class DependecyAnalyserLib {
     StaticJavaParser.setConfiguration(config);
   }
 
-  private String getSourceRoot(String classPath, String packagePath) {
+  private static String getSourceRoot(String classPath, String packagePath) {
     var packageRoot = packagePath.split("\\.")[0];
     return classPath.split(packageRoot)[0];
   }
 
-  private String getPackage(final String classSrc) throws NoSuchElementException {
+  private static String getPackage(final String classSrc) throws NoSuchElementException {
     CompilationUnit cu = StaticJavaParser.parse(classSrc);
     return cu.getPackageDeclaration().get().getNameAsString();
   }
 
-  private void getDependencies(final String classPath, final String classSrc, final Promise<ClassDepsReport> promise) {
-    try {
-      initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
+  private static String editPath(String path) {
+    // Normalize slashes and strip ".java"
+    String normalized = path.replace("\\", "/").replace(".java", "");
+    String[] parts = normalized.split("/");
 
-      CompilationUnit cu = StaticJavaParser.parse(classSrc);
-      ClassDepsReport classDepsReport = new ClassDepsReport(classPath);
+    // Skip the first segment (e.g., "test-src")
+    return String.join(".", Arrays.copyOfRange(parts, 1, parts.length));
+  }
 
-      cu.findAll(ImportDeclaration.class).stream()
-        .map(ImportDeclaration::getNameAsString)
-        .distinct()
-        .forEach(classDepsReport::addElement);
+  private static Single<ClassDepsReport> getDependencies(final String classPath, final String classSrc) {
+    return Single.create(emitter -> {
+      try {
+        initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
 
-      cu.findAll(ClassOrInterfaceType.class).forEach(classType -> {
-        var resolvedType = classType.resolve();
-        if (resolvedType.isReferenceType()) {
-          var qualifiedName = resolvedType.asReferenceType().getQualifiedName();
-          if (!classDepsReport.getElements().contains(qualifiedName) && !qualifiedName.startsWith("java.lang.")) {
-            classDepsReport.addElement(qualifiedName);
+        CompilationUnit cu = StaticJavaParser.parse(classSrc);
+        ClassDepsReport classDepsReport = new ClassDepsReport(editPath(classPath));
+
+        cu.findAll(ImportDeclaration.class).stream()
+          .map(ImportDeclaration::getNameAsString)
+          .distinct()
+          .forEach(classDepsReport::addElement);
+
+        cu.findAll(ClassOrInterfaceType.class).forEach(classType -> {
+          var resolvedType = classType.resolve();
+          if (resolvedType.isReferenceType()) {
+            var qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+            if (!classDepsReport.getElements().contains(qualifiedName) && !qualifiedName.startsWith("java.lang.")) {
+              classDepsReport.addElement(qualifiedName);
+            }
           }
+        });
+
+        emitter.onSuccess(classDepsReport);
+      } catch (Exception e) {
+        emitter.onError(e);
+      }
+    });
+  }
+
+  private static Single<List<String>> findAllDirectories(String rootPath) {
+    return Single.fromCallable(() -> {
+      List<String> directories = new ArrayList<>();
+      try (Stream<Path> paths = Files.walk(Paths.get(rootPath))) {
+        paths.filter(Files::isDirectory)
+          .map(Path::toString)
+          .filter(path -> !path.endsWith(rootPath))
+//          .map(path -> path.replace(rootPath, ""))
+//          .map(path -> path.replace("\\", "."))
+          .forEach(directories::add);
+      }
+      return directories;
+    }).subscribeOn(Schedulers.io());
+  }
+
+  private static Single<ClassDepsReport> getClassDependencies(final String classSrcFile) {
+    return Single.fromCallable(() -> Files.readString(Paths.get(classSrcFile)))
+      .subscribeOn(Schedulers.io())
+      .flatMap(content -> getDependencies(classSrcFile, content));
+  }
+
+  private static Single<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
+    return Single.fromCallable(() -> {
+        try (Stream<Path> paths = Files.list(Paths.get(packageSrcFolder))) {
+          return paths
+            .map(Path::toString)
+            .filter(string -> string.endsWith(".java"))
+            .toList();
         }
-      });
-
-      promise.complete(classDepsReport);
-    } catch (Exception e) {
-      promise.fail(e);
-    }
+      }).subscribeOn(Schedulers.io())
+      .flatMap(files -> Observable.fromIterable(files)
+        .flatMapSingle(DependecyAnalyserLib::getClassDependencies)
+        .toList()
+        .map(classDeps -> {
+          PackageDepsReport report = new PackageDepsReport(editPath(packageSrcFolder));
+          classDeps.forEach(report::addElement);
+          return report;
+        }));
   }
 
-  private Future<List<String>> findAllDirectories(String rootPath) {
-    Promise<List<String>> promise = Promise.promise();
-    List<String> directories = new ArrayList<>();
-
-    fs.readDir(rootPath).compose(paths -> {
-        List<Future<Void>> composedFutures = new ArrayList<>();
-
-        for (String path : paths) {
-          Future<Void> composed = fs.props(path).compose(props -> {
-            if (!props.isDirectory()) {
-              return Future.succeededFuture(); // non è una directory, skip
-            }
-            directories.add(path);
-            return findAllDirectories(path)
-              .compose(subDirs -> {
-                directories.addAll(subDirs);
-                return Future.succeededFuture();
-              });
-          });
-
-          composedFutures.add(composed);
-        }
-
-        return Future.all(composedFutures).mapEmpty();
-      }).onSuccess(v -> promise.complete(directories))
-      .onFailure(promise::fail);
-
-    return promise.future();
-  }
-
-  public Future<ClassDepsReport> getClassDependencies(final String classSrcFile) {
-    Promise<ClassDepsReport> promise = Promise.promise();
-    fs
-      .readFile(classSrcFile)
-      .onSuccess(res -> {
-        getDependencies(classSrcFile, res.toString(), promise);
-      })
-      .onFailure(err -> {
-        System.err.println("Error while class reading: " + err.getMessage());
-        promise.fail(err);
-      });
-
-    return promise.future();
-  }
-
-  public Future<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
-    Promise<PackageDepsReport> promise = Promise.promise();
-    PackageDepsReport packageDepsReport = new PackageDepsReport(packageSrcFolder);
-    fs.readDir(packageSrcFolder)
-      .onSuccess(paths -> {
-        List<Future<ClassDepsReport>> futures = paths.stream()
-          .filter(p -> p.endsWith(".java"))
-          .map(p -> p.replace("\\", "/"))
-          .map(p -> p.substring(p.indexOf(packageSrcFolder)))
-          .map(this::getClassDependencies)
-          .toList();
-
-        Future.all(futures)
-          .onSuccess(classDepsReports -> {
-            for (int i = 0; i < classDepsReports.size(); i++) {
-              packageDepsReport.addElement(classDepsReports.resultAt(i));
-            }
-            promise.complete(packageDepsReport);
-          })
-          .onFailure(promise::fail);
-      })
-      .onFailure(promise::fail);
-    return promise.future();
-  }
-
-  public Future<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
-    Promise<ProjectDepsReport> promise = Promise.promise();
-    ProjectDepsReport projectDepsReport = new ProjectDepsReport(projectSrcFolder);
-    findAllDirectories(projectSrcFolder)
-      .onSuccess(packages -> {
-        List<Future<PackageDepsReport>> packageFutures = packages.stream()
-          .map(p -> p.replace("\\", "/"))
-          .map(p -> p.substring(p.indexOf(projectSrcFolder)))
-          .map(this::getPackageDependencies)
-          .toList();
-
-        Future.all(packageFutures)
-          .onSuccess(packageDepsReports -> {
-            for (int i = 0; i < packageDepsReports.size(); i++) {
-              projectDepsReport.addElement(packageDepsReports.resultAt(i));
-            }
-            promise.complete(projectDepsReport);
-          })
-          .onFailure(promise::fail);
-      })
-      .onFailure(promise::fail);
-    return promise.future();
+  public static  Single<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
+    return findAllDirectories(projectSrcFolder)
+      .flatMap(directories -> Observable.fromIterable(directories)
+        .flatMapSingle(DependecyAnalyserLib::getPackageDependencies)
+        .toList()
+        .map(packageDeps -> {
+          ProjectDepsReport report = new ProjectDepsReport(editPath(projectSrcFolder));
+          packageDeps.forEach(report::addElement);
+          return report;
+      }));
   }
 
 }

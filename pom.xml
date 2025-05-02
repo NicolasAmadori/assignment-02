@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>pcd.ass02</groupId>
@@ -18,6 +18,8 @@
 
     <vertx.version>4.5.14</vertx.version>
     <junit-jupiter.version>5.9.1</junit-jupiter.version>
+    <rxjava.version>3.1.8</rxjava.version>
+    <jgrapht.version>1.5.2</jgrapht.version>
 
     <main.verticle>pcd.ass02.MainVerticle</main.verticle>
     <launcher.class>io.vertx.core.Launcher</launcher.class>
@@ -36,6 +38,7 @@
   </dependencyManagement>
 
   <dependencies>
+    <!-- Vertx Dependencies -->
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-web-client</artifactId>
@@ -49,6 +52,40 @@
       <artifactId>vertx-rx-java3</artifactId>
     </dependency>
 
+    <!-- Direct RxJava dependency -->
+<!--    <dependency>-->
+<!--      <groupId>io.reactivex.rxjava3</groupId>-->
+<!--      <artifactId>rxjava</artifactId>-->
+<!--      <version>3.1.10</version>-->
+<!--    </dependency>-->
+
+    <!-- Graph Visualization Dependencies -->
+    <dependency>
+      <groupId>org.jgrapht</groupId>
+      <artifactId>jgrapht-core</artifactId>
+      <version>${jgrapht.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jgrapht</groupId>
+      <artifactId>jgrapht-ext</artifactId>
+      <version>${jgrapht.version}</version>
+    </dependency>
+
+    <!-- JGraphX explicitly -->
+    <dependency>
+      <groupId>org.tinyjee.jgraphx</groupId>
+      <artifactId>jgraphx</artifactId>
+      <version>3.4.1.3</version>
+    </dependency>
+
+    <!-- Java Parser -->
+    <dependency>
+      <groupId>com.github.javaparser</groupId>
+      <artifactId>javaparser-symbol-solver-core</artifactId>
+      <version>3.26.4</version>
+    </dependency>
+
+    <!-- Test Dependencies -->
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-junit5</artifactId>
@@ -65,11 +102,6 @@
       <artifactId>junit-jupiter-engine</artifactId>
       <version>${junit-jupiter.version}</version>
       <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.github.javaparser</groupId>
-      <artifactId>javaparser-symbol-solver-core</artifactId>
-      <version>3.26.4</version>
     </dependency>
   </dependencies>
 
@@ -127,5 +159,16 @@
     </plugins>
   </build>
 
+  <!-- Add repositories if needed -->
+  <repositories>
+    <repository>
+      <id>central</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+  </repositories>
 
 </project>
