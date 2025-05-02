@@ -194,7 +194,7 @@ public class DependencyAnalyserGUI {
         Map<String, List<String>> classMap = entry.getValue();
 
         int classCount = classMap.size();
-        int calculatedHeight = Math.max(100, classCount * classSpacing + 40); // Minimum height 100
+        int calculatedHeight = Math.max(100, classCount * classSpacing + 40);
 
         // Create package container
         Object packageGroup = graph.insertVertex(
@@ -209,7 +209,7 @@ public class DependencyAnalyserGUI {
         int cIdx = 0;
         for (var e : classMap.entrySet()) {
           String className = e.getKey();
-          int classNameWidth = Math.max(60, className.length() * 7 + 20); // Dynamically set width
+          int classNameWidth = Math.max(60, className.length() * 7 + 20);
 
           Object classVertex = graph.insertVertex(
             packageGroup, null, className,
