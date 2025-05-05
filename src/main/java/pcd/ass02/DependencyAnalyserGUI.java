@@ -9,16 +9,26 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.view.mxGraph;
-import com.mxgraph.layout.mxCircleLayout;
 
 public class DependencyAnalyserGUI {
+  int X_OFFSET = 20;
+  int Y_OFFSET = 20;
+  int PACKAGE_SPACING = 300;
+  int CLASS_SPACING = 60;
+  int PACKAGES_PER_LINE = 3;
+
   private JFrame frame;
   private JButton startButton;
   private JTextField folderPathField;
   private JPanel graphPanel;
+  private Map<String, Map<String, List<String>>> packClassDeps = new HashMap<>();
+  private Map<String, Object> packageVertexMap = new HashMap<>();
+  private Map<String, Object> classVertexMap = new HashMap<>();
+  private Map<String, Map<String, Object>> edgeVertexMap = new HashMap<>();
+  private mxGraph graph = new mxGraph();
 
   public static void main(String[] args) {
-    SwingUtilities.invokeLater(() -> new DependencyAnalyserGUI().createAndShowGUI());
+    new DependencyAnalyserGUI().createAndShowGUI();
   }
 
   private void createAndShowGUI() {
@@ -60,230 +70,146 @@ public class DependencyAnalyserGUI {
 
   private void startAnalysis() {
     String folderPath = folderPathField.getText();
+    graphPanel.removeAll();
 
-    DependecyAnalyserLib.getProjectDependencies(folderPath)
+    DependecyAnalyserLib.getProjectDependencies(folderPath).getElements()
       .subscribeOn(Schedulers.io()) // run heavy analysis on background thread
       .subscribe(
-        report -> SwingUtilities.invokeLater(() -> updateGraphRectangle(report)), // onSuccess
+        packageDepsReport -> SwingUtilities.invokeLater(() -> updatePackage(packageDepsReport)), // onSuccess
         error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage())
       );
-
-//      .onSuccess(report -> {
-//        SwingUtilities.invokeLater(() -> {
-//          updateGraphRectangle(report);
-//        });
-//      })
-//      .onFailure(err -> {
-//          SwingUtilities.invokeLater(() ->
-//            JOptionPane.showMessageDialog(frame, "Error: " + err.getMessage()));
-//        }
-//      );
-
-    // Use CompletableFuture instead of RxJava
-//    CompletableFuture.supplyAsync(() -> getProjectDependencies(rootFolder))
-//      .thenAccept(report -> {
-//        SwingUtilities.invokeLater(() -> {
-//          classCountLabel.setText("Classes: " + report.getClassCount());
-//          dependencyCountLabel.setText("Dependencies: " + report.getDependencyCount());
-//          updateGraphRectangle(report);
-//        });
-//      })
-//      .exceptionally(error -> {
-//        SwingUtilities.invokeLater(() ->
-//          JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage()));
-//        return null;
-//      });
   }
 
-  private void updateGraph(ProjectDepsReport report) {
-    graphPanel.removeAll();
+  private void drawPackage(Object parent, String packageName) {
+    //PAINT NEW PACKAGE
+    int packageNumber = packageVertexMap.size() + 1;
+    int calculatedHeight = 100; //Math.max(100, classCount * CLASS_SPACING + 40);
 
-    // Create a JGraphX graph
-    mxGraph graph = new mxGraph();
-    Object parent = graph.getDefaultParent();
-
-    Map<String, Map<String, List<String>>> packClassDeps = new HashMap<>();
-    for (var packageReport : report.getElements()) {
-      Map<String, List<String>> packageMap = new HashMap<>();
-      packClassDeps.put(packageReport.getName(), packageMap);
-      for (var classReport : packageReport.getElements()) {
-        packageMap.put(classReport.getName(), classReport.getElements());
-      }
-    }
-
-    // Start a batch of edits
-    graph.getModel().beginUpdate();
-    try {
-      // Create vertices for each class
-//      Object[] vertices = new Object[reportSize];
-//      for (int i = 0; i < reportSize; i++) {
-//        // Insert vertex with unique ID, label, x, y, width, height
-//        vertices[i] = graph.insertVertex(parent, "class" + i, "Class" + i,
-//          0, 0, 100, 40);
-//      }
-//
-//      // Create edges for dependencies
-//      for (int i = 0; i < report.getDependencyCount(); i++) {
-//        int from = i % reportSize;
-//        int to = (i + 1) % reportSize);
-//        graph.insertEdge(parent, "edge" + i, "", vertices[from], vertices[to]);
-//      }
-
-      // Apply a circle layout
-      mxCircleLayout layout = new mxCircleLayout(graph);
-      layout.setX0(250);  // Set the center x-coordinate
-      layout.setY0(250);  // Set the center y-coordinate
-      layout.setRadius(200);  // Set the radius of the circle
-      layout.execute(parent);
-    } finally {
-      // End the batch of edits
-      graph.getModel().endUpdate();
-    }
-
-    // Create a graph component and add it to the panel
-    mxGraphComponent graphComponent = new mxGraphComponent(graph);
-    graphPanel.add(graphComponent, BorderLayout.CENTER);
-    graphPanel.revalidate();
-    graphPanel.repaint();
+    Object packageGroup = graph.insertVertex(
+      parent, null, packageName,
+      X_OFFSET + (packageNumber % PACKAGES_PER_LINE) * PACKAGE_SPACING,
+      ((double) packageNumber / PACKAGES_PER_LINE) * PACKAGE_SPACING + Y_OFFSET,
+      250,
+      calculatedHeight,
+      "fillColor=none;strokeColor=black;rounded=1"
+    );
+    packageVertexMap.put(packageName, packageGroup);
   }
 
-
-  private void updateGraphRectangle(ProjectDepsReport report) {
-    graphPanel.removeAll();
-    mxGraph graph = new mxGraph();
-    Object parent = graph.getDefaultParent();
-
-    Map<String, Object> packageVertexMap = new HashMap<>();
-    Map<String, Object> classVertexMap = new HashMap<>();
-
-    graph.getModel().beginUpdate();
+  private void updateGraph() {
     try {
-      int xOffset = 20;
-      int yOffset = 20;
-      int packageSpacing = 300;
-      int classSpacing = 60;
-      int packagePerLine = 3;
+      Object parent = graph.getDefaultParent();
+      graph.getModel().beginUpdate();
 
+      //Disegno i package nuovi
+      packClassDeps.keySet()
+        .stream()
+        .filter(packageName -> !packageVertexMap.containsKey(packageName))
+        .forEach( packageName -> drawPackage(parent, packageName));
 
+      //Disegno le nuove classi
+      for (var p : packClassDeps.entrySet()) {
+        String packageName = p.getKey();
+        Set<String> totalClass = p.getValue().keySet();
 
-      Map<String, Map<String, List<String>>> packClassDeps = new HashMap<>();
-      for (var packageReport : report.getElements()) {
-        Map<String, List<String>> packageMap = new HashMap<>();
-        packClassDeps.put(packageReport.getName(), packageMap);
-        for (var classReport : packageReport.getElements()) {
-          packageMap.put(classReport.getName(), classReport.getElements());
-          for (var dep : classReport.getElements()) {
-            Optional<String> depClassName = Optional.empty();
-            var splitted = new ArrayList<>(Arrays.stream(dep.split("\\.")).toList());
-
-            if (Character.isUpperCase(splitted.get(splitted.size() - 1).charAt(0))) {
-              depClassName = Optional.of(splitted.remove(splitted.size() - 1));
-            }
-            String packageName = String.join(".", splitted);
-            if (!packClassDeps.containsKey(packageName)) {
-              packClassDeps.put(packageName, new HashMap<>());
-            }
-            depClassName.ifPresent(s -> packClassDeps.get(packageName).put(dep, Collections.emptyList()));
+        for (var c : p.getValue().entrySet()) {
+          String className = c.getKey();
+          if (classVertexMap.containsKey(className)) {
+            continue;
           }
-        }
-      }
-
-      int pIdx = 0;
-      for (var entry : packClassDeps.entrySet()) {
-        String packageName = entry.getKey();
-        Map<String, List<String>> classMap = entry.getValue();
-
-        int classCount = classMap.size();
-        int calculatedHeight = Math.max(100, classCount * classSpacing + 40);
-
-        // Create package container
-        Object packageGroup = graph.insertVertex(
-          parent, null, packageName,
-          xOffset + (pIdx % packagePerLine) * packageSpacing,
-          (pIdx / packagePerLine) * packageSpacing + yOffset,
-          250, calculatedHeight,
-          "fillColor=none;strokeColor=black;rounded=1"
-        );
-        packageVertexMap.put(packageName, packageGroup);
-
-        int cIdx = 0;
-        for (var e : classMap.entrySet()) {
-          String className = e.getKey();
           int classNameWidth = Math.max(60, className.length() * 7 + 20);
+          int classCounter = (int) totalClass.stream().filter(classVertexMap::containsKey).count();
 
           Object classVertex = graph.insertVertex(
-            packageGroup, null, className,
-            20, 20 + cIdx * classSpacing,
+            packageVertexMap.get(packageName), null, className,
+            20, 20 + classCounter * CLASS_SPACING,
             classNameWidth, 30
           );
           classVertexMap.put(className, classVertex);
-          cIdx++;
         }
-
-        pIdx++;
       }
 
-      // Add edges based on class dependencies
-      for (PackageDepsReport packageReport : report.getElements()) {
-        for (ClassDepsReport classReport : packageReport.getElements()) {
-          Object fromVertex = classVertexMap.get(classReport.getName());
-          if (fromVertex != null) {
-            for (String dep : classReport.getElements()) {
-              Object toVertex = classVertexMap.get(dep) == null
-                ? packageVertexMap.get(dep)
-                : classVertexMap.get(dep);
-              if (toVertex != null) {
-                graph.insertEdge(parent, null, "", fromVertex, toVertex);
-              }
+      //Disegno le nuove dependency
+      for (var p : packClassDeps.entrySet()) {
+        String packageName = p.getKey();
+
+        for (var c : p.getValue().entrySet()) {
+          String className = c.getKey();
+          Object fromVertex = classVertexMap.get(className);
+          if (fromVertex == null) {
+            continue;
+          }
+          if (!edgeVertexMap.containsKey(className)) {
+            edgeVertexMap.put(className, new HashMap<>());
+          }
+
+          for (String to : c.getValue()) {
+            if (edgeVertexMap.containsKey(to)) {
+              continue;
+            }
+            Object toVertex = classVertexMap.get(to) == null
+              ? packageVertexMap.get(to)
+              : classVertexMap.get(to);
+            if (toVertex != null) {
+              Object edgeVertex = graph.insertEdge(parent, null, "", fromVertex, toVertex);
+              edgeVertexMap.get(className).put(to, edgeVertex);
             }
           }
         }
       }
+
+      mxGraphComponent graphComponent = new mxGraphComponent(graph);
+      graphPanel.add(graphComponent, BorderLayout.CENTER);
+//      graphPanel.revalidate();
+//      graphPanel.repaint();
     } finally {
       graph.getModel().endUpdate();
     }
 
-    mxGraphComponent graphComponent = new mxGraphComponent(graph);
-    graphPanel.add(graphComponent, BorderLayout.CENTER);
-    graphPanel.revalidate();
-    graphPanel.repaint();
   }
-}
 
-//// Simple parser without RxJava
-//class DependencyParser {
-//  public static DummyProjectDepsReport analyseProject(File folder) {
-//    // Here you'd parse files using JavaParser
-//    try {
-//      // Simulate processing time
-//      Thread.sleep(1000);
-//    } catch (InterruptedException e) {
-//      Thread.currentThread().interrupt();
-//    }
-//    return new DummyProjectDepsReport(8, 12); // Dummy values for testing
-//  }
-//}
-//
-//class DummyProjectDepsReport {
-//  private final int classCount;
-//  private final int dependencyCount;
-//
-//  public DummyProjectDepsReport(int classCount, int dependencyCount) {
-//    this.classCount = classCount;
-//    this.dependencyCount = dependencyCount;
-//  }
-//
-//  public int getClassCount() {
-//    return classCount;
-//  }
-//
-//  public int getDependencyCount() {
-//    return dependencyCount;
-//  }
-//
-//  @Override
-//  public String toString() {
-//    return "Classes: " + classCount + ", Dependencies: " + dependencyCount;
-//  }
-//}
+  private void updatePackage(PackageDepsReport packageDepsReport) {
+    final Map<String, List<String>> packageMap = new HashMap<>();
+    if (packClassDeps.containsKey(packageDepsReport.getName())) {
+      packageMap.putAll(packClassDeps.get(packageDepsReport.getName()));
+    }
+    packClassDeps.put(packageDepsReport.getName(), packageMap);
+
+    packageDepsReport.getElements().subscribeOn(Schedulers.io()) // run heavy analysis on background thread
+      .subscribe(
+        classDepsReport -> updateClass(classDepsReport, packageMap), // onSuccess
+        error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage()));
+    }
+
+  private void updateClass(ClassDepsReport classDepsReport, Map<String, List<String>> packageMap) {
+    final List<String> deps = new ArrayList<>();
+    if (packageMap.containsKey(classDepsReport.getName())) {
+      deps.addAll(packageMap.get(classDepsReport.getName()));
+    }
+    packageMap.put(classDepsReport.getName(), deps);
+
+    classDepsReport.getElements().subscribeOn(Schedulers.io()) // run heavy analysis on background thread
+      .subscribe(
+        dep -> updateDependency(dep, deps), // onSuccess
+        error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage()));
+  }
+
+  private void updateDependency(String dep, List<String> deps) {
+    if (!deps.contains(dep)) {
+      deps.add(dep);
+    }
+    Optional<String> depClassName = Optional.empty();
+    var split = new ArrayList<>(Arrays.stream(dep.split("\\.")).toList());
+    if (Character.isUpperCase(split.get(split.size() - 1).charAt(0))) {
+      depClassName = Optional.of(split.remove(split.size() - 1));
+    }
+    String packageName = String.join(".", split);
+    if (!packClassDeps.containsKey(packageName)) {
+      packClassDeps.put(packageName, new HashMap<>());
+    }
+    depClassName.ifPresent(s -> packClassDeps.get(packageName).put(dep, Collections.emptyList()));
+    SwingUtilities.invokeLater(this::updateGraph);
+  }
+
+}
 

@@ -6,6 +6,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.TypeSolver;
+import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
@@ -15,6 +16,7 @@ import io.reactivex.rxjava3.core.*;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -55,86 +57,108 @@ public class DependecyAnalyserLib {
     return String.join(".", Arrays.copyOfRange(parts, 1, parts.length));
   }
 
-  private static Single<ClassDepsReport> getDependencies(final String classPath, final String classSrc) {
-    return Single.create(emitter -> {
-      try {
-        initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
+//  private static ClassDepsReport getDependencies(final String classPath, final String classSrc) {
+//    initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
+//    CompilationUnit cu = StaticJavaParser.parse(classSrc);
+//    Observable<String> obs = Observable.fromIterable(() ->
+//      Stream.concat(
+//        cu.findAll(ImportDeclaration.class).stream()
+//          .map(ImportDeclaration::getNameAsString),
+//        cu.findAll(ClassOrInterfaceType.class).stream()
+//          .map(ClassOrInterfaceType::resolve)
+//          .filter(ResolvedType::isReferenceType)
+//          .map(rt -> rt.asReferenceType().getQualifiedName())
+//          .filter(name -> !name.startsWith("java.lang."))
+//      ).distinct().iterator()
+//    );
+//    return new ClassDepsReport(editPath(classPath), obs);
+//  }
 
-        CompilationUnit cu = StaticJavaParser.parse(classSrc);
-        ClassDepsReport classDepsReport = new ClassDepsReport(editPath(classPath));
-
-        cu.findAll(ImportDeclaration.class).stream()
-          .map(ImportDeclaration::getNameAsString)
-          .distinct()
-          .forEach(classDepsReport::addElement);
-
-        cu.findAll(ClassOrInterfaceType.class).forEach(classType -> {
-          var resolvedType = classType.resolve();
-          if (resolvedType.isReferenceType()) {
-            var qualifiedName = resolvedType.asReferenceType().getQualifiedName();
-            if (!classDepsReport.getElements().contains(qualifiedName) && !qualifiedName.startsWith("java.lang.")) {
-              classDepsReport.addElement(qualifiedName);
-            }
-          }
-        });
-
-        emitter.onSuccess(classDepsReport);
-      } catch (Exception e) {
-        emitter.onError(e);
-      }
-    });
-  }
-
-  private static Single<List<String>> findAllDirectories(String rootPath) {
-    return Single.fromCallable(() -> {
-      List<String> directories = new ArrayList<>();
+  private static Observable<String> findAllDirectories(String rootPath) {
+    return Observable.fromIterable(() -> {
       try (Stream<Path> paths = Files.walk(Paths.get(rootPath))) {
-        paths.filter(Files::isDirectory)
+        return paths.filter(Files::isDirectory)
           .map(Path::toString)
           .filter(path -> !path.endsWith(rootPath))
-//          .map(path -> path.replace(rootPath, ""))
-//          .map(path -> path.replace("\\", "."))
-          .forEach(directories::add);
+          .iterator();
+      } catch (IOException e) {
+        throw new RuntimeException(e);
       }
-      return directories;
     }).subscribeOn(Schedulers.io());
+//    return Single.fromCallable(() -> {
+//      List<String> directories = new ArrayList<>();
+//      try (Stream<Path> paths = Files.walk(Paths.get(rootPath))) {
+//        paths.filter(Files::isDirectory)
+//          .map(Path::toString)
+//          .filter(path -> !path.endsWith(rootPath))
+//          .forEach(directories::add);
+//      }
+//      return directories;
+//    }).subscribeOn(Schedulers.io());
   }
 
-  private static Single<ClassDepsReport> getClassDependencies(final String classSrcFile) {
-    return Single.fromCallable(() -> Files.readString(Paths.get(classSrcFile)))
-      .subscribeOn(Schedulers.io())
-      .flatMap(content -> getDependencies(classSrcFile, content));
-  }
+  private static ClassDepsReport getClassDependencies(final String classSrcFile) throws IOException {
+    var content = Files.readString(Paths.get(classSrcFile));
+    initTypeSolver(getSourceRoot(classSrcFile, getPackage(content)));
+    CompilationUnit cu = StaticJavaParser.parse(content);
 
-  private static Single<PackageDepsReport> getPackageDependencies(final String packageSrcFolder) {
-    return Single.fromCallable(() -> {
-        try (Stream<Path> paths = Files.list(Paths.get(packageSrcFolder))) {
-          return paths
-            .map(Path::toString)
-            .filter(string -> string.endsWith(".java"))
-            .toList();
+    Observable<String> imports = Observable.fromIterable(cu.findAll(ImportDeclaration.class))
+      .map(ImportDeclaration::getNameAsString);
+
+    Observable<String> types = Observable.fromIterable(cu.findAll(ClassOrInterfaceType.class))
+      .flatMap(type -> {
+        ResolvedType resolved = type.resolve();
+        if (resolved.isReferenceType()) {
+          String qualifiedName = resolved.asReferenceType().getQualifiedName();
+          if (!qualifiedName.startsWith("java.lang.")) {
+            return Observable.just(qualifiedName);
+          }
         }
-      }).subscribeOn(Schedulers.io())
-      .flatMap(files -> Observable.fromIterable(files)
-        .flatMapSingle(DependecyAnalyserLib::getClassDependencies)
-        .toList()
-        .map(classDeps -> {
-          PackageDepsReport report = new PackageDepsReport(editPath(packageSrcFolder));
-          classDeps.forEach(report::addElement);
-          return report;
-        }));
+        return Observable.empty();
+      });
+
+    Observable<String> deps = Observable.merge(imports, types)
+      .distinct();
+
+    return new ClassDepsReport(editPath(classSrcFile), deps);
   }
 
-  public static  Single<ProjectDepsReport> getProjectDependencies(final String projectSrcFolder) {
-    return findAllDirectories(projectSrcFolder)
-      .flatMap(directories -> Observable.fromIterable(directories)
-        .flatMapSingle(DependecyAnalyserLib::getPackageDependencies)
-        .toList()
-        .map(packageDeps -> {
-          ProjectDepsReport report = new ProjectDepsReport(editPath(projectSrcFolder));
-          packageDeps.forEach(report::addElement);
-          return report;
-      }));
+  private static PackageDepsReport getPackageDependencies(final String packageSrcFolder) {
+    Observable<ClassDepsReport> classes = Observable.fromIterable(() -> {
+      try (Stream<Path> paths = Files.list(Paths.get(packageSrcFolder))) {
+        return paths
+          .map(Path::toString)
+          .filter(string -> string.endsWith(".java"))
+          .iterator();
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }).subscribeOn(Schedulers.io())
+      .map(DependecyAnalyserLib::getClassDependencies);
+    return new PackageDepsReport(editPath(packageSrcFolder), classes);
+//     Single.fromCallable(() -> {
+//        try (Stream<Path> paths = Files.list(Paths.get(packageSrcFolder))) {
+//          return paths
+//            .map(Path::toString)
+//            .filter(string -> string.endsWith(".java"))
+//            .toList();
+//        }
+//      }).subscribeOn(Schedulers.io())
+//      .flatMap(files -> Observable.fromIterable(files)
+//        .flatMapSingle(DependecyAnalyserLib::getClassDependencies)
+//        .toList()
+//        .map(classDeps -> {
+//          PackageDepsReport report = new PackageDepsReport(editPath(packageSrcFolder));
+//          classDeps.forEach(report::addElement);
+//          return report;
+//        }));
+  }
+
+  public static ProjectDepsReport getProjectDependencies(final String projectSrcFolder) {
+    Observable<PackageDepsReport> packages = findAllDirectories(projectSrcFolder)
+      .map(DependecyAnalyserLib::getPackageDependencies);
+
+    return new ProjectDepsReport(editPath(projectSrcFolder), packages);
   }
 
 }

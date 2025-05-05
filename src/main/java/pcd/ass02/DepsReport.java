@@ -1,12 +1,10 @@
 package pcd.ass02;
 
-import java.util.List;
+import io.reactivex.rxjava3.core.Observable;
 
 public interface DepsReport<T> {
 
-  void addElement(T element);
-
-  List<T> getElements();
+  Observable<T> getElements();
 
   String getName();
 }

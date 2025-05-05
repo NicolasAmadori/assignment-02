@@ -1,24 +1,18 @@
 package pcd.ass02;
 
-import java.util.ArrayList;
-import java.util.List;
+import io.reactivex.rxjava3.core.Observable;
 
 public class ClassDepsReport implements DepsReport<String> {
   private final String className;
-  private final List<String> deps;
+  private final Observable<String> deps;
 
-  public ClassDepsReport(final String className) {
+  public ClassDepsReport(final String className, final Observable<String> deps) {
     this.className = className;
-    this.deps = new ArrayList<>();
+    this.deps = deps;
   }
 
   @Override
-  public void addElement(String element) {
-    deps.add(element);
-  }
-
-  @Override
-  public List<String> getElements() {
+  public Observable<String> getElements() {
     return deps;
   }
 
