@@ -80,7 +80,7 @@ public class TestMainVerticle {
       Map.entry("test-src/nested", Collections.emptyMap()),
       Map.entry("test-src/main", Map.of(
         "test-src/main/Integer.java", Collections.emptyList(),
-        "test-src/main/App.java", List.of("models.User", "services.UserService", "utils.Logger", "main.SamePackage", "main.Integer"),
+        "test-src/main/App.java", List.of("models.User", "services.UserService", "main.utils.Logger", "main.SamePackage", "main.Integer"),
         "test-src/main/SamePackage.java", Collections.emptyList())),
       Map.entry("test-src/services", Map.of(
         "test-src/services/Logger.java", List.of("java.io.File"),

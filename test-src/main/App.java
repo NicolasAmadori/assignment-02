@@ -2,7 +2,7 @@ package main;
 
 import models.User;
 import services.UserService;
-import utils.Logger;
+import main.utils.Logger;
 
 public class App {
   public static void main(String[] args) {
