@@ -50,41 +50,9 @@ public class DependecyAnalyserLib {
     // Normalize slashes and strip ".java"
     String normalized = path.replace("\\", "/").replace(".java", "");
     String[] parts = normalized.split("/");
-
     // Skip the first segment ("src")
     return String.join(".", Arrays.copyOfRange(parts, 1, parts.length));
   }
-
-//  private static ClassDepsReport getDependencies(final String classPath, final String classSrc) {
-//    initTypeSolver(getSourceRoot(classPath, getPackage(classSrc)));
-//    CompilationUnit cu = StaticJavaParser.parse(classSrc);
-//    Observable<String> obs = Observable.fromIterable(() ->
-//      Stream.concat(
-//        cu.findAll(ImportDeclaration.class).stream()
-//          .map(ImportDeclaration::getNameAsString),
-//        cu.findAll(ClassOrInterfaceType.class).stream()
-//          .map(ClassOrInterfaceType::resolve)
-//          .filter(ResolvedType::isReferenceType)
-//          .map(rt -> rt.asReferenceType().getQualifiedName())
-//          .filter(name -> !name.startsWith("java.lang."))
-//      ).distinct().iterator()
-//    );
-//    return new ClassDepsReport(editPath(classPath), obs);
-//  }
-
-//  private static Observable<String> findAllDirectories(String rootPath) {
-//    System.out.println("4");
-//    return Observable.fromIterable(() -> {
-//      try (Stream<Path> paths = Files.walk(Paths.get(rootPath))) {
-//        return paths.filter(Files::isDirectory)
-//          .map(Path::toString)
-//          .filter(path -> !path.endsWith(rootPath))
-//          .iterator();
-//      } catch (IOException e) {
-//        throw new RuntimeException(e);
-//      }
-//    }).subscribeOn(Schedulers.io());
-//  }
 
   private static Observable<String> findAllDirectories(String rootPath) {
     return Observable.<String>create(emitter -> {
