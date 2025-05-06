@@ -20,6 +20,7 @@ Further notes:
 
 - Besides the library, a program testing each async method should be included.
 
+![](doc/test.gif)
 
 2) Develop a GUI-based program called `DependecyAnalyser`, using a reactive programming based approach. The program should give the possibility to analyse and display dynamically/incrementally the dependencies found by interfaces/classes belonging to the project as a graph, possibly grouping interfaces/classes in packages.
 
@@ -32,8 +33,6 @@ Further notes:
 - As for the previous point, [JavaParser](https://javaparser.org/) can be used for parsing individual Java source files and build the AST.
 
 - The point (2) is **not** meant to reuse the library developed in point (1), based on async programming: the whole solution should be re-designed, non only the GUI part, exploiting specifically reactive programming.
-
-![](doc/test.gif)
 
 ### The deliverable
 
