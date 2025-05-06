@@ -21,10 +21,10 @@ public class DependencyAnalyserGUI {
   private JButton startButton;
   private JTextField folderPathField;
   private JPanel graphPanel;
-  private Map<String, Map<String, List<String>>> packClassDeps = new HashMap<>();
-  private Map<String, Object> packageVertexMap = new HashMap<>();
-  private Map<String, Object> classVertexMap = new HashMap<>();
-  private Map<String, Map<String, Object>> edgeVertexMap = new HashMap<>();
+  private Map<String, Map<String, List<String>>> packClassDeps;
+  private Map<String, Object> packageVertexMap;
+  private Map<String, Object> classVertexMap;
+  private Map<String, Map<String, Object>> edgeVertexMap;
   private mxGraph graph = new mxGraph();
 
   public static void main(String[] args) {
@@ -36,27 +36,55 @@ public class DependencyAnalyserGUI {
     frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     frame.setLayout(new BorderLayout());
 
-    JPanel topPanel = new JPanel(new BorderLayout());
-    folderPathField = new JTextField("test-src");
-    JButton browseButton = new JButton("Browse");
-    browseButton.addActionListener(e -> selectFolder());
-    topPanel.add(folderPathField, BorderLayout.CENTER);
-    topPanel.add(browseButton, BorderLayout.EAST);
+//    JPanel topPanel = new JPanel(new BorderLayout());
+//    folderPathField = new JTextField("test-src");
+//    JButton browseButton = new JButton("Browse");
+//    browseButton.addActionListener(e -> selectFolder());
+//    topPanel.add(folderPathField, BorderLayout.CENTER);
+//    topPanel.add(browseButton, BorderLayout.EAST);
+//
+//    startButton = new JButton("Start Analysis");
+//    startButton.addActionListener(e -> startAnalysis());
+//
+//    graphPanel = new JPanel(new BorderLayout());
+//    graphPanel.setBorder(BorderFactory.createTitledBorder("Dependency Graph"));
+//
+//    JPanel controlPanel = new JPanel(new BorderLayout());
+//    controlPanel.add(topPanel, BorderLayout.NORTH);
+//    controlPanel.add(startButton, BorderLayout.CENTER);
+//
+//    frame.add(controlPanel, BorderLayout.WEST);
+//    frame.add(graphPanel, BorderLayout.CENTER);
+    JPanel controlPanel = new JPanel(new BorderLayout());
 
-    startButton = new JButton("Start Analysis");
+    JPanel topRowPanel = new JPanel(new BorderLayout());
+    folderPathField = new JTextField("test-src");
+    folderPathField.setPreferredSize(new Dimension(600, 30)); // Make it wider
+
+    JButton browseButton = new JButton("Browse");
+    browseButton.setPreferredSize(new Dimension(100, 30));
+    browseButton.addActionListener(e -> selectFolder());
+
+    JButton startButton = new JButton("Start Analysis");
+    startButton.setPreferredSize(new Dimension(150, 30));
     startButton.addActionListener(e -> startAnalysis());
+
+    topRowPanel.add(browseButton, BorderLayout.WEST);
+    topRowPanel.add(folderPathField, BorderLayout.CENTER);
+    topRowPanel.add(startButton, BorderLayout.EAST);
+
+    controlPanel.add(topRowPanel, BorderLayout.NORTH);
 
     graphPanel = new JPanel(new BorderLayout());
     graphPanel.setBorder(BorderFactory.createTitledBorder("Dependency Graph"));
 
-    JPanel controlPanel = new JPanel(new BorderLayout());
-    controlPanel.add(topPanel, BorderLayout.NORTH);
-    controlPanel.add(startButton, BorderLayout.CENTER);
-
-    frame.add(controlPanel, BorderLayout.WEST);
+    frame.add(controlPanel, BorderLayout.NORTH);
     frame.add(graphPanel, BorderLayout.CENTER);
 
-    frame.setSize(1500, 1000);
+    frame.setSize(1800, 1000);
+    frame.setExtendedState(JFrame.MAXIMIZED_BOTH); // Fullscreen
+    frame.setUndecorated(false); // Keep title bar (set true for borderless fullscreen)
+    frame.setResizable(false); // Disable resizing
     frame.setVisible(true);
   }
 
@@ -69,14 +97,25 @@ public class DependencyAnalyserGUI {
   }
 
   private void startAnalysis() {
+    packClassDeps = new HashMap<>();
+    packageVertexMap = new HashMap<>();
+    classVertexMap = new HashMap<>();
+    edgeVertexMap = new HashMap<>();
+    graph = new mxGraph();
+    graph.setAutoSizeCells(true);
+    graph.setCellsMovable(true); // false, if you want to lock
+    graph.setAllowDanglingEdges(false);
+    graph.setCellsResizable(false);
     String folderPath = folderPathField.getText();
+
     graphPanel.removeAll();
+    graphPanel.revalidate();
 
     DependecyAnalyserLib.getProjectDependencies(folderPath).getElements()
       .subscribeOn(Schedulers.io()) // run heavy analysis on background thread
       .subscribe(
         packageDepsReport -> SwingUtilities.invokeLater(() -> updatePackage(packageDepsReport)), // onSuccess
-        error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage())
+        error -> SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "Error: " + error))
       );
   }
 
@@ -96,7 +135,19 @@ public class DependencyAnalyserGUI {
     packageVertexMap.put(packageName, packageGroup);
   }
 
-  private void updateGraph() {
+  private void drawClass(Object parent, String className, int classCounter) {
+    int classNameWidth = Math.max(60, className.length() * 7 + 20);
+//    int classCounter = (int) totalClass.stream().filter(classVertexMap::containsKey).count();
+
+    Object classVertex = graph.insertVertex(
+      parent, null, className,
+      20, 20 + classCounter * CLASS_SPACING,
+      classNameWidth, 30
+    );
+    classVertexMap.put(className, classVertex);
+  }
+
+  private void updateGraph(final Map<String, Map<String, List<String>>> packClassDeps) {
     try {
       Object parent = graph.getDefaultParent();
       graph.getModel().beginUpdate();
@@ -117,34 +168,33 @@ public class DependencyAnalyserGUI {
           if (classVertexMap.containsKey(className)) {
             continue;
           }
-          int classNameWidth = Math.max(60, className.length() * 7 + 20);
           int classCounter = (int) totalClass.stream().filter(classVertexMap::containsKey).count();
-
-          Object classVertex = graph.insertVertex(
-            packageVertexMap.get(packageName), null, className,
-            20, 20 + classCounter * CLASS_SPACING,
-            classNameWidth, 30
-          );
-          classVertexMap.put(className, classVertex);
+          drawClass(packageVertexMap.get(packageName), className, classCounter);
         }
       }
 
       //Disegno le nuove dependency
       for (var p : packClassDeps.entrySet()) {
         String packageName = p.getKey();
+        Set<String> totalClass = p.getValue().keySet();
 
         for (var c : p.getValue().entrySet()) {
           String className = c.getKey();
           Object fromVertex = classVertexMap.get(className);
           if (fromVertex == null) {
-            continue;
+            //Create the class vertex if not present
+            System.out.println("Class " + className + " not found. Creating");
+            int classCounter = (int) totalClass.stream().filter(classVertexMap::containsKey).count();
+            drawClass(packageVertexMap.get(packageName), className, classCounter);
+            fromVertex = classVertexMap.get(className);
           }
+
           if (!edgeVertexMap.containsKey(className)) {
             edgeVertexMap.put(className, new HashMap<>());
           }
 
           for (String to : c.getValue()) {
-            if (edgeVertexMap.containsKey(to)) {
+            if (edgeVertexMap.get(className).containsKey(to)) {
               continue;
             }
             Object toVertex = classVertexMap.get(to) == null
@@ -153,6 +203,8 @@ public class DependencyAnalyserGUI {
             if (toVertex != null) {
               Object edgeVertex = graph.insertEdge(parent, null, "", fromVertex, toVertex);
               edgeVertexMap.get(className).put(to, edgeVertex);
+            } else {
+              System.out.println("to not found");
             }
           }
         }
@@ -160,8 +212,8 @@ public class DependencyAnalyserGUI {
 
       mxGraphComponent graphComponent = new mxGraphComponent(graph);
       graphPanel.add(graphComponent, BorderLayout.CENTER);
-//      graphPanel.revalidate();
-//      graphPanel.repaint();
+      graphPanel.revalidate();
+      graphPanel.repaint();
     } finally {
       graph.getModel().endUpdate();
     }
@@ -175,11 +227,13 @@ public class DependencyAnalyserGUI {
     }
     packClassDeps.put(packageDepsReport.getName(), packageMap);
 
-    packageDepsReport.getElements().subscribeOn(Schedulers.io()) // run heavy analysis on background thread
+    packageDepsReport.getElements().subscribeOn(Schedulers.io())
       .subscribe(
-        classDepsReport -> updateClass(classDepsReport, packageMap), // onSuccess
-        error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage()));
-    }
+        classDepsReport -> updateClass(classDepsReport, packageMap),
+        error -> JOptionPane.showMessageDialog(frame, "Error: " + error));
+    var temp = deepImmutableCopy(this.packClassDeps);
+    SwingUtilities.invokeLater(() -> this.updateGraph(temp));
+  }
 
   private void updateClass(ClassDepsReport classDepsReport, Map<String, List<String>> packageMap) {
     final List<String> deps = new ArrayList<>();
@@ -188,28 +242,48 @@ public class DependencyAnalyserGUI {
     }
     packageMap.put(classDepsReport.getName(), deps);
 
-    classDepsReport.getElements().subscribeOn(Schedulers.io()) // run heavy analysis on background thread
+    classDepsReport.getElements().subscribeOn(Schedulers.io())
       .subscribe(
-        dep -> updateDependency(dep, deps), // onSuccess
+        dep -> updateDependency(dep, deps),
         error -> JOptionPane.showMessageDialog(frame, "Error: " + error.getMessage()));
+    var temp = deepImmutableCopy(this.packClassDeps);
+    SwingUtilities.invokeLater(() -> this.updateGraph(temp));
   }
 
   private void updateDependency(String dep, List<String> deps) {
     if (!deps.contains(dep)) {
       deps.add(dep);
     }
-    Optional<String> depClassName = Optional.empty();
+//    Optional<String> depClassName = Optional.empty();
+    boolean isClass = false;
     var split = new ArrayList<>(Arrays.stream(dep.split("\\.")).toList());
     if (Character.isUpperCase(split.get(split.size() - 1).charAt(0))) {
-      depClassName = Optional.of(split.remove(split.size() - 1));
+//      depClassName = Optional.of(split.remove(split.size() - 1));
+      split.remove(split.size() - 1);
+      isClass = true;
     }
     String packageName = String.join(".", split);
     if (!packClassDeps.containsKey(packageName)) {
       packClassDeps.put(packageName, new HashMap<>());
     }
-    depClassName.ifPresent(s -> packClassDeps.get(packageName).put(dep, Collections.emptyList()));
-    SwingUtilities.invokeLater(this::updateGraph);
+//    depClassName.ifPresent(_ -> packClassDeps.get(packageName).put(dep, Collections.emptyList()));
+    if (isClass) packClassDeps.get(packageName).put(dep, Collections.emptyList());
+    var temp = deepImmutableCopy(this.packClassDeps);
+    SwingUtilities.invokeLater(() -> this.updateGraph(temp));
   }
+
+  private Map<String, Map<String, List<String>>> deepImmutableCopy(Map<String, Map<String, List<String>>> original) {
+    Map<String, Map<String, List<String>>> outerCopy = new HashMap<>();
+    for (Map.Entry<String, Map<String, List<String>>> outerEntry : original.entrySet()) {
+      Map<String, List<String>> innerMap = new HashMap<>();
+      for (Map.Entry<String, List<String>> innerEntry : outerEntry.getValue().entrySet()) {
+        innerMap.put(innerEntry.getKey(), Collections.unmodifiableList(new ArrayList<>(innerEntry.getValue())));
+      }
+      outerCopy.put(outerEntry.getKey(), Collections.unmodifiableMap(innerMap));
+    }
+    return Collections.unmodifiableMap(outerCopy);
+  }
+
 
 }
 
